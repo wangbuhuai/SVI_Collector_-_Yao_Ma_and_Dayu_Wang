@@ -12,6 +12,7 @@ from tkinter import filedialog
 from typing import TextIO
 
 
+# Requirements of the CEO's name and role
 REQUIREMENTS: dict[str, str | list[str]] = {
     "NAME_EXCLUDE": r"[^A-Za-z\-' ]",
     "ROLE": r'(ceo)|(chief executive officer)',
@@ -21,9 +22,6 @@ REQUIREMENTS: dict[str, str | list[str]] = {
                        "Admiral", "Governor", "Sister", "Vice", "Lieutenant", "Commander", "Dean", "Bishop", "Brother",
                        "Father", "Jr"]
 }
-
-
-SEARCH_TIMEFRAME: str = "all"
 
 
 OUTPUT_COLUMNS: list[str] = [
@@ -43,6 +41,7 @@ OUTPUT_COLUMNS: list[str] = [
     "P_ORG_TYPE",
     "P_ISIN",
 ]
+
 
 OUTPUT_FILENAME: str = "1_Cleaned_Database.csv"
 
@@ -99,6 +98,7 @@ def main():
         return
     raw_database_file: TextIO = open(file=pathname_raw_database, mode='r', encoding="utf-8", errors="ignore")
     raw_database_file_reader: csv.reader = csv.reader(raw_database_file, delimiter=',')
+    next(raw_database_file_reader, None)
 
     # Create the output file.
     if not os.path.isdir(r"Output_Files"):
