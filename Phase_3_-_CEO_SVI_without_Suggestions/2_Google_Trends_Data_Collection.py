@@ -1,22 +1,36 @@
 # Created by Dayu Wang (dwang@stchas.edu) on 2024-08-07
 
-# Last updated by Dayu Wang (dwang@stchas.edu) on 2024-08-07
+# Last updated by Dayu Wang (dwang@stchas.edu) on 2024-08-11
 
 
 import csv
+import datetime
 import os
 import serpapi
 import shutil
+import time
+import tkinter
+from tkinter import filedialog
 from typing import TextIO
 
 
-API_KEY_FILE_PATH = os.path.join(r"C:\Users\wangb\OneDrive\Wang_Buhuai\Dayu_Wang\Study_and_Research\["
-                                 r"Research]_Superstar_CEOs_and_Short_Selling\API_Keys", "SerpAPI_Key.txt")
+# Input file information
+INPUT_FILE_DIRECTORY: str = r"Output_Files"
+INPUT_FILE_NAME: str = r"1_Prepared_Search_Data.csv"
+
+# Output file information
+OUTPUT_FILE_DIRECTORY: str = r"SVI_Raw_Data"
 
 
 def main():
     # Let the user provide a plain text file storing his/her SerpAPI key.
-    pathname_api_key: str = API_KEY_FILE_PATH
+    root: tkinter.Tk = tkinter.Tk()
+    root.withdraw()
+    pathname_api_key: str = filedialog.askopenfilename(
+        title="Select the file containing the API key",
+        initialdir='/',
+        filetypes=[("Plain Text File", "*.txt")]
+    )
     if not os.path.isfile(pathname_api_key):
         print("[Error] You must provide a valid API key for SerpAPI.")
         return
@@ -25,24 +39,16 @@ def main():
     file_api_key.close()
 
     # Open the input file.
-    if not os.path.isdir(r'Output_Files'):
-        print("[Error] Folder \"Output_Files\" does not exist.")
+    if not os.path.isdir(INPUT_FILE_DIRECTORY):
+        print("[Error] Input file directory does not exist.")
         return
-    input_filename: str | None = None
-    for filename in os.listdir(r'Output_Files'):
-        if filename.startswith('1_'):
-            input_filename = filename
-            break
-    if input_filename is None:
+    if not os.path.isfile(os.path.join(INPUT_FILE_DIRECTORY, INPUT_FILE_NAME)):
         print("[Error] Required input file does not exist.")
         return
-    input_file: TextIO = open(file=os.path.join(r'Output_Files', input_filename), mode='r', encoding="utf-8",
+    input_file: TextIO = open(file=os.path.join(INPUT_FILE_DIRECTORY, INPUT_FILE_NAME), mode='r', encoding="utf-8",
                               errors="ignore")
     input_file_reader: csv.reader = csv.reader(input_file, delimiter=',')
     next(input_file_reader, None)
-
-    # A set to store the director IDs that have already been processed.
-    director_ids: set[int] = set()
 
     # Get the next row number to process from the temporary file.
     if not os.path.isdir(r'Temp'):
@@ -74,77 +80,90 @@ def main():
     # Process the input file.
     current: int = 2
     for row in input_file_reader:
-        # Get the director ID.
-        p_director_id: int = int(row[7])
-
         # Find the next row to process.
         if current < row_number:
-            director_ids.add(p_director_id)
-            current += 1
-            continue
-
-        # Test whether the current CEO has already been processed.
-        if p_director_id in director_ids or p_director_id in current_ceos.keys():
             current += 1
             continue
 
         # Add the current CEO to the lists storing the current 5 CEOs.
-        p_query_name: str = row[1].strip()
+        p_query_name: str = row[0].strip()
+        p_director_id: int = int(row[1])
         current_ceos[p_director_id] = p_query_name
 
         # Collect the data on Google Trends through SerpAPI when 5 CEOs are accumulated.
         if len(current_ceos) == 5:
             params['q'] = ','.join([current_ceos[k] for k in sorted(current_ceos.keys())])
 
-            search_result: serpapi.GoogleSearch = serpapi.GoogleSearch(params)
+            csv_result: list[str] | None = None
 
-            csv_result = search_result.get_dict()
+            # Stop running the program is consecutive 10 errors are accumulated on the same piece of data.
+            error_count: int = 0
+
+            while True:
+                try:
+                    search_result: serpapi.GoogleSearch = serpapi.GoogleSearch(params)
+                    csv_result = search_result.get_dict()["csv"]
+                    error_count = 0
+                    break
+                except KeyError:
+                    error_count += 1
+                    print(f"[Key Error] -> {sorted(current_ceos.keys())} -> "
+                          f"{datetime.datetime.strftime(datetime.datetime.today(), '%Y-%m-%d %H:%M:%S')}")
+                except:
+                    error_count += 1
+                    print(f"[Other Error] -> {sorted(current_ceos.keys())} -> "
+                          f"{datetime.datetime.strftime(datetime.datetime.today(), '%Y-%m-%d %H:%M:%S')}")
+                finally:
+                    if error_count >= 10:
+                        print(f"[Consecutive 10 Errors] -> {sorted(current_ceos.keys())} -> "
+                              f"{datetime.datetime.strftime(datetime.datetime.today(), '%Y-%m-%d %H:%M:%S')}")
+                        break
+                    time.sleep(10)
+
+            # Process the collected data.
             csv_result[1] = f",{','.join(str(i) for i in sorted(current_ceos.keys()))}\n"
-
-            with open(file=os.path.join(r"Output_Files", f"{sorted(current_ceos.keys())[0]:07d}-"
-                                                         f"{sorted(current_ceos.keys())[-1]:07d}.csv"),
+            if not os.path.isdir(OUTPUT_FILE_DIRECTORY):
+                os.mkdir(OUTPUT_FILE_DIRECTORY)
+            with open(file=os.path.join(OUTPUT_FILE_DIRECTORY, f"{sorted(current_ceos.keys())[0]}-"
+                                                               f"{sorted(current_ceos.keys())[-1]}.csv"),
                       mode='w',
                       encoding="utf-8",
                       errors="ignore") as f_out:
                 f_out.write('\n'.join(csv_result))
 
-            print(f"[Success] {sorted(current_ceos.keys())[0]:07d}-{sorted(current_ceos.keys())[-1]:07d}")
+            print(f"[Success] {sorted(current_ceos.keys())[0]}-{sorted(current_ceos.keys())[-1]}")
             params.pop('q')
-            director_ids.update(current_ceos.keys())
             current_ceos.clear()
 
         current += 1
+        temp_file: TextIO = open(file=os.path.join(r'Temp', r'next_row_to_process.txt'), mode='w', encoding="utf-8",
+                                 errors="ignore")
+        temp_file.write(f"{current}")
+        temp_file.close()
 
     if len(current_ceos) > 0:
         params['q'] = ','.join([current_ceos[k] for k in sorted(current_ceos.keys())])
 
-        try:
-            search_result: serpapi.SerpResults = serpapi.search(params)
-        except:
-            temp_file: TextIO = open(file=os.path.join(r"Temp", r"next_row_to_process.txt"), mode='w',
-                                     encoding="utf-8", errors="ignore")
-            temp_file.write(f"{current}")
-            temp_file.close()
-            print(f"[Error] Search Failed -> Row Number: {current}")
-            return
+        search_result: serpapi.GoogleSearch = serpapi.GoogleSearch(params)
+        csv_result = search_result.get_dict()["csv"]
 
-        csv_result: list[str] = search_result["csv"]
+        # Process the collected data.
         csv_result[1] = f",{','.join(str(i) for i in sorted(current_ceos.keys()))}\n"
 
-        with open(file=os.path.join(r"Output_Files", f"{sorted(current_ceos.keys())[0]:07d}-"
-                                                     f"{sorted(current_ceos.keys())[-1]:07d}.csv"),
+        if not os.path.isdir(OUTPUT_FILE_DIRECTORY):
+            os.mkdir(OUTPUT_FILE_DIRECTORY)
+        with open(file=os.path.join(OUTPUT_FILE_DIRECTORY, f"{sorted(current_ceos.keys())[0]}-"
+                                                           f"{sorted(current_ceos.keys())[-1]}.csv"),
                   mode='w',
                   encoding="utf-8",
                   errors="ignore") as f_out:
             f_out.write('\n'.join(csv_result))
 
-        print(f"[Success] {sorted(current_ceos.keys())[0]:07d}-{sorted(current_ceos.keys())[-1]:07d}")
+        print(f"[Success] {sorted(current_ceos.keys())[0]}-{sorted(current_ceos.keys())[-1]}")
 
     input_file.close()
 
     # Clean up.
-    if os.path.isfile(os.path.join(r"Output_Files", r"next_row_to_process.txt")):
-        os.remove(os.path.join(r"Output_Files", r"next_row_to_process.txt"))
     if os.path.isdir(r"Temp"):
         shutil.rmtree(r"Temp")
 

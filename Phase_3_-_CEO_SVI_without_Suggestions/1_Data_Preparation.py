@@ -1,10 +1,9 @@
 # Created by Dayu Wang (dwang@stchas.edu) on 2024-08-07
 
-# Last updated by Dayu Wang (dwang@stchas.edu) on 2024-08-07
+# Last updated by Dayu Wang (dwang@stchas.edu) on 2024-08-11
 
 
 import csv
-import datetime
 import os
 import re
 import tkinter
@@ -25,25 +24,12 @@ REQUIREMENTS: dict[str, str | list[str]] = {
 
 
 OUTPUT_COLUMNS: list[str] = [
-    "P_SEARCH_NUMBER",
     "P_QUERY_NAME",
-    "P_DIRECTOR_NAME",
-    "P_COMPANY_NAME",
-    "P_BRD_POSITION",
-    "P_ROLE_NAME",
-    "P_NED",
     "P_DIRECTOR_ID",
-    "P_COMPANY_ID",
-    "P_DATE_START_ROLE",
-    "P_DATE_END_ROLE",
-    "P_HO_COUNTRY_NAME",
-    "P_SECTOR",
-    "P_ORG_TYPE",
-    "P_ISIN",
 ]
 
 
-OUTPUT_FILENAME: str = "1_Cleaned_Database.csv"
+OUTPUT_FILENAME: str = "1_Prepared_Search_Data.csv"
 
 
 def reformat_name(name: str) -> str | None:
@@ -94,7 +80,7 @@ def main():
         filetypes=[("CSV File", "*.csv")]
     )
     if not os.path.isfile(pathname_raw_database):
-        print("Pathname of the raw database file is invalid.")
+        print("[Error] Pathname of the raw database file is invalid.")
         return
     raw_database_file: TextIO = open(file=pathname_raw_database, mode='r', encoding="utf-8", errors="ignore")
     raw_database_file_reader: csv.reader = csv.reader(raw_database_file, delimiter=',')
@@ -108,60 +94,37 @@ def main():
     output_file.write(f"{','.join(OUTPUT_COLUMNS)}\n")
     output_file.flush()
 
-    current: int = 2  # Current row number
+    ids: set[int] = set()  # Stores the discovered director IDs.
+
     for row in raw_database_file_reader:
+        # Tests whether the director ID has already been processed.
+        p_director_id: int = int(row[6])
+        if p_director_id in ids:
+            continue
+        ids.add(p_director_id)
+
         # Tests whether the role start date and role end date are valid.
         p_date_start_role: str = row[8].replace(',', ' ').strip()
         p_date_end_role: str = row[9].replace(',', ' ').strip()
         if p_date_start_role.lower() == 'n' or p_date_end_role.lower() == 'n':
-            current += 1
             continue
-        if p_date_end_role.lower() == 'c':
-            p_date_end_role = datetime.datetime.strftime(datetime.date.today(), f"%m/%d/%Y")
 
         # Tests whether the role name is valid.
         p_role_name: str = row[3].replace(',', ' ').strip()
         if not valid_role_name(p_role_name):
-            current += 1
             continue
 
         # Tests whether the director name is valid.
         p_director_name: str = row[0].replace(',', ' ').strip()
         p_query_name: str | None = reformat_name(p_director_name)
         if p_query_name is None:
-            current += 1
             continue
 
         # Write the valid data to the output file.
-        p_company_name: str = row[1].replace(',', ' ').strip()
-        p_brd_position: str = row[2].replace(',', ' ').strip()
-        p_ned: str = row[5].replace(',', ' ').strip()
-        p_director_id: int = int(row[6])
-        p_company_id: int = int(row[7])
-        p_ho_country_name: str = row[10].replace(',', ' ').strip()
-        p_sector: str = row[11].replace(',', ' ').strip()
-        p_org_type: str = row[12].replace(',', ' ').strip()
-        p_isin: str = row[13].replace(',', ' ').strip()
-
         output_file.write(','.join([
-            f"{current}",
             f"{p_query_name}",
-            f"{p_director_name}",
-            f"{p_company_name}",
-            f"{p_brd_position}",
-            f"{p_role_name}",
-            f"{p_ned}",
             f"{p_director_id}",
-            f"{p_company_id}",
-            f"{p_date_start_role}",
-            f"{p_date_end_role}",
-            f"{p_ho_country_name}",
-            f"{p_sector}",
-            f"{p_org_type}",
-            f"{p_isin}"
         ]) + '\n')
-
-        current += 1
 
     raw_database_file.close()
     output_file.close()
